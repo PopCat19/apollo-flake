@@ -4,9 +4,9 @@
   pkgs,
   utils,
   ...
-}: let
-  inherit
-    (lib)
+}:
+let
+  inherit (lib)
     mkEnableOption
     mkPackageOption
     mkOption
@@ -24,18 +24,18 @@
   generatePorts = port: offsets: map (offset: port + offset) offsets;
   defaultPort = 47989;
 
-  appsFormat = pkgs.formats.json {};
-  settingsFormat = pkgs.formats.keyValue {};
+  appsFormat = pkgs.formats.json { };
+  settingsFormat = pkgs.formats.keyValue { };
 
   appsFile = appsFormat.generate "apps.json" cfg.applications;
   configFile = settingsFormat.generate "sunshine.conf" cfg.settings;
-in {
+in
+{
   options.services.apollo = with types; {
     enable = mkEnableOption "Apollo, a self-hosted game stream host for Moonlight";
 
-    package =
-      mkPackageOption pkgs "apollo" {
-      };
+    package = mkPackageOption pkgs "apollo" {
+    };
 
     openFirewall = mkOption {
       type = bool;
@@ -62,7 +62,7 @@ in {
     };
 
     settings = mkOption {
-      default = {};
+      default = { };
       description = ''
         Settings to be rendered into the Apollo configuration file (e.g., sunshine.conf).
         If this is set, configuration via the web UI might be overridden or disabled.
@@ -76,7 +76,7 @@ in {
           # port = 47989; # This is handled by settings.port below by default
         }
       '';
-      type = submodule (settingsSubmodule: {
+      type = submodule (_settingsSubmodule: {
         # This allows freeform key-value pairs for Apollo settings
         freeformType = settingsFormat.type;
         options.port = mkOption {
@@ -91,7 +91,7 @@ in {
     };
 
     applications = mkOption {
-      default = {};
+      default = { };
       description = ''
         Configuration for applications to be exposed to Moonlight via Apollo.
         If this is set, configuration via the web UI might be overridden or disabled.
@@ -122,14 +122,14 @@ in {
       type = submodule {
         options = {
           env = mkOption {
-            default = {};
+            default = { };
             description = ''
               Global environment variables to be set for the applications.
             '';
             type = attrsOf str;
           };
           apps = mkOption {
-            default = [];
+            default = [ ];
             description = ''
               List of applications to be exposed to Moonlight.
               Refer to Apollo/Sunshine documentation for app configuration structure.
@@ -142,7 +142,7 @@ in {
   };
 
   config = mkIf cfg.enable {
-    services.apollo.settings.file_apps = mkIf (cfg.applications.apps != []) "${appsFile}";
+    services.apollo.settings.file_apps = mkIf (cfg.applications.apps != [ ]) "${appsFile}";
 
     environment.systemPackages = [
       cfg.package
@@ -167,10 +167,10 @@ in {
     };
 
     # Kernel module for virtual input devices
-    boot.kernelModules = ["uinput"];
+    boot.kernelModules = [ "uinput" ];
 
     # Udev rules (your Apollo flake already installs these via CMake)
-    services.udev.packages = [cfg.package];
+    services.udev.packages = [ cfg.package ];
 
     # Avahi for service discovery (mDNS)
     services.avahi = {
@@ -192,10 +192,10 @@ in {
     systemd.user.services.apollo = {
       description = "Apollo - Self-hosted game stream host for Moonlight";
 
-      wantedBy = mkIf cfg.autoStart ["graphical-session.target"];
-      partOf = ["graphical-session.target"];
-      wants = ["graphical-session.target"];
-      after = ["graphical-session.target"];
+      wantedBy = mkIf cfg.autoStart [ "graphical-session.target" ];
+      partOf = [ "graphical-session.target" ];
+      wants = [ "graphical-session.target" ];
+      after = [ "graphical-session.target" ];
 
       startLimitIntervalSec = 500;
       startLimitBurst = 5;
@@ -206,17 +206,12 @@ in {
       serviceConfig = {
         ExecStart = escapeSystemdExecArgs (
           [
-            (
-              if cfg.capSysAdmin
-              then "${config.security.wrapperDir}/apollo"
-              else "${getExe cfg.package}"
-            )
+            (if cfg.capSysAdmin then "${config.security.wrapperDir}/apollo" else "${getExe cfg.package}")
           ]
           ++ optionals (
-            cfg.applications.apps
-            != [] # If applications are defined
+            cfg.applications.apps != [ ] # If applications are defined
             || (builtins.length (builtins.attrNames cfg.settings) > 1 || cfg.settings.port != defaultPort) # Or if settings beyond just the default port are made
-          ) ["${configFile}"]
+          ) [ "${configFile}" ]
         );
         Restart = "on-failure";
         RestartSec = "5s";
