@@ -61,6 +61,63 @@
                 # so $out contains the contents of that directory (CMakeLists.txt, libs/, etc.)
                 tar -xf $src --strip-components=1 -C $out
               '';
+
+          # Runtime dependencies for RPATH wrapping
+          runtimeDeps = with pkgs; [
+            avahi
+            libgbm
+            libglvnd
+            xorg.libXrandr
+            xorg.libxcb
+          ];
+
+          # Build dependencies
+          buildDeps = with pkgs; [
+            amf-headers
+            avahi
+            curl
+            glib
+            libcap
+            libdatrie
+            libdrm
+            libepoxy
+            libevdev
+            libffi
+            libgbm
+            libnotify
+            libopus
+            libpulseaudio
+            libselinux
+            libsepol
+            libthai
+            libuuid
+            libva
+            libvdpau
+            libxkbcommon
+            miniupnpc
+            nlohmann_json
+            numactl
+            openssl
+            pcre
+            pcre2
+            svt-av1
+            sysprof
+            wayland
+            xorg.libX11
+            xorg.libXdmcp
+            xorg.libXfixes
+            xorg.libXi
+            xorg.libXrandr
+            xorg.libXtst
+            xorg.libxcb
+            (if pkgs.lib ? libappindicator then pkgs.libappindicator else pkgs.libappindicator-gtk3)
+          ];
+
+          # CUDA-specific dependencies
+          cudaDeps = with cudaPackages; [
+            cuda_cudart
+            cudatoolkit
+          ];
         in
         stdenv'.mkDerivation rec {
           pname = "sunshine";
@@ -103,58 +160,9 @@
             (pkgs.lib.getDev cudaPackages.cuda_cudart)
           ];
 
-          buildInputs = [
-            pkgs.avahi
-            pkgs.libevdev
-            pkgs.libpulseaudio
-            pkgs.xorg.libX11
-            pkgs.xorg.libxcb
-            pkgs.xorg.libXfixes
-            pkgs.xorg.libXrandr
-            pkgs.xorg.libXtst
-            pkgs.xorg.libXi
-            pkgs.openssl
-            pkgs.libopus
-            pkgs.libdrm
-            pkgs.wayland
-            pkgs.libffi
-            pkgs.libcap
-            pkgs.curl
-            pkgs.pcre
-            pkgs.pcre2
-            pkgs.libuuid
-            pkgs.libselinux
-            pkgs.libsepol
-            pkgs.libthai
-            pkgs.libdatrie
-            pkgs.xorg.libXdmcp
-            pkgs.libxkbcommon
-            pkgs.libepoxy
-            pkgs.libva
-            pkgs.libvdpau
-            pkgs.numactl
-            pkgs.libgbm
-            pkgs.amf-headers
-            pkgs.sysprof
-            pkgs.glib
-            pkgs.svt-av1
-            (if pkgs.lib ? libappindicator then pkgs.libappindicator else pkgs.libappindicator-gtk3)
-            pkgs.libnotify
-            pkgs.miniupnpc
-            pkgs.nlohmann_json
-          ]
-          ++ pkgs.lib.optionals cudaSupport [
-            cudaPackages.cudatoolkit
-            cudaPackages.cuda_cudart
-          ];
+          buildInputs = buildDeps ++ pkgs.lib.optionals cudaSupport cudaDeps;
 
-          runtimeDependencies = [
-            pkgs.avahi
-            pkgs.libgbm
-            pkgs.xorg.libXrandr
-            pkgs.xorg.libxcb
-            pkgs.libglvnd
-          ];
+          runtimeDependencies = runtimeDeps;
 
           cmakeFlags = [
             "-Wno-dev"
