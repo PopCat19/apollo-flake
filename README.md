@@ -62,4 +62,7 @@ And in my `configuration.nix`:
 After `nixos-rebuild` the service should be started. Verify with `systemctl --user status apollo` or start it with `systemctl --user start apollo.service`
 
 ## Credits
-I made some small modifications to the Sunshine package from nixpkgs (https://github.com/NixOS/nixpkgs/blob/nixos-25.05/pkgs/by-name/su/sunshine/package.nix). The people maintaining that package put in the hard work to make the package work for Sunshine.
+
+- Original project: [ClassicOldSong/Apollo](https://github.com/ClassicOldSong/Apollo)
+- Sunshine package: Modified from [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-25.05/pkgs/by-name/su/sunshine/package.nix) — thanks to the Sunshine package maintainers for their work
+- Refactoring: LLM-assisted with human review
