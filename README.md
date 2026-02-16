@@ -64,5 +64,6 @@ After `nixos-rebuild` the service should be started. Verify with `systemctl --us
 ## Credits
 
 - Original project: [ClassicOldSong/Apollo](https://github.com/ClassicOldSong/Apollo)
+- Forked from: [nil-andreas/apollo-flake](https://github.com/nil-andreas/apollo-flake)
 - Sunshine package: Modified from [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-25.05/pkgs/by-name/su/sunshine/package.nix) — thanks to the Sunshine package maintainers for their work
 - Refactoring: LLM-assisted with human review
