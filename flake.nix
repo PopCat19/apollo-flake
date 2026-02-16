@@ -236,7 +236,12 @@
     in
     {
       # System-independent (fixes #4)
-      nixosModules.default = ./apollo-module.nix;
+      nixosModules.default =
+        { pkgs, ... }:
+        {
+          imports = [ ./apollo-module.nix ];
+          services.apollo.package = nixpkgs.lib.mkDefault self.packages.${pkgs.system}.default;
+        };
 
       # System-dependent
       packages = forEachSystem (pkgs: {
