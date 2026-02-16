@@ -1,20 +1,33 @@
 # Apollo nix flake
+
 Nix flake for https://github.com/ClassicOldSong/Apollo.
+
+> **Note:** This project contains LLM-generated contributions. Use with caution and review changes before deploying.
 
 ## Disclaimer
 This is the first flake I'm building. It might not be complete. Following the Usage section you should be able to get Apollo up and running.
 
 ## Usage
-To include the flake, follow the instructions [Using nix flakes with NixOS](https://nixos.wiki/wiki/flakes#Using_nix_flakes_with_NixOS). After including the flake I added this to my modules in flake.nix:
+To include the flake, follow the instructions [Using nix flakes with NixOS](https://nixos.wiki/wiki/flakes#Using_nix_flakes_with_NixOS). After including the flake, add the module to your NixOS configuration:
+
 ```nix
-    modules = [
-      # configuration.nix
-      # Apollo
-      (inputs.apollo-flake.nixosModules.${linuxPkgsUnstable.system}.default)
-      ({pkgs, ...}: {
-        services.apollo.package = apollo-flake.packages.${pkgs.system}.default;
-      })
-    ];
+{
+  inputs.apollo-flake.url = "github:popcat19/apollo-flake";
+
+  outputs = { self, nixpkgs, apollo-flake, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        apollo-flake.nixosModules.default
+        {
+          services.apollo.enable = true;
+          # package is auto-set from the flake, but can be overridden:
+          # services.apollo.package = apollo-flake.packages.x86_64-linux.default;
+        }
+      ];
+    };
+  };
+}
 ```
 
 And in my `configuration.nix`:
