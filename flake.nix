@@ -16,16 +16,20 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
+      # Provides both regular and unfree nixpkgs instances
+      # Unfree is needed only for CUDA packages
       forEachSystem =
         f:
         nixpkgs.lib.genAttrs supportedSystems (
           system:
-          f (
-            import nixpkgs {
+          let
+            pkgs = import nixpkgs { inherit system; };
+            pkgsUnfree = import nixpkgs {
               inherit system;
               config.allowUnfree = true;
-            }
-          )
+            };
+          in
+          f { inherit pkgs pkgsUnfree; }
         );
 
       sunshinePackage =
@@ -252,35 +256,44 @@
         };
 
       # System-dependent
-      packages = forEachSystem (pkgs: {
-        default = sunshinePackage { inherit pkgs; };
-        sunshine = sunshinePackage { inherit pkgs; };
-        sunshine-cuda = sunshinePackage {
-          inherit pkgs;
-          cudaSupport = true;
-        };
-      });
+      packages = forEachSystem (
+        { pkgs, pkgsUnfree }:
+        {
+          default = sunshinePackage { inherit pkgs; };
+          sunshine = sunshinePackage { inherit pkgs; };
+          sunshine-cuda = sunshinePackage {
+            pkgs = pkgsUnfree;
+            cudaSupport = true;
+          };
+        }
+      );
 
-      apps = forEachSystem (pkgs: {
-        default = {
-          type = "app";
-          program = "${self.packages.${pkgs.system}.default}/bin/sunshine";
-        };
-        sunshine = self.apps.${pkgs.system}.default;
-        sunshine-cuda = {
-          type = "app";
-          program = "${self.packages.${pkgs.system}.sunshine-cuda}/bin/sunshine";
-        };
-      });
+      apps = forEachSystem (
+        { pkgs, ... }:
+        {
+          default = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.default}/bin/sunshine";
+          };
+          sunshine = self.apps.${pkgs.system}.default;
+          sunshine-cuda = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.sunshine-cuda}/bin/sunshine";
+          };
+        }
+      );
 
-      devShells = forEachSystem (pkgs: {
-        default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${pkgs.system}.default ];
-          packages = [
-            pkgs.cmake
-            pkgs.gdb
-          ];
-        };
-      });
+      devShells = forEachSystem (
+        { pkgs, ... }:
+        {
+          default = pkgs.mkShell {
+            inputsFrom = [ self.packages.${pkgs.system}.default ];
+            packages = [
+              pkgs.cmake
+              pkgs.gdb
+            ];
+          };
+        }
+      );
     };
 }
