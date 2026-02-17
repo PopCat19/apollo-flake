@@ -7,8 +7,9 @@
 # This script:
 # - Collects commits between target branch and current branch
 # - Archives existing root changelogs
-# - Generates a new changelog file
-# - Optionally renames after merge with actual commit hash
+# - Generates a new changelog file and walks through the merge workflow
+# - Commits, merges, renames, and pushes interactively
+# - Supports generate-only and rename-only modes
 #
 # Usage:
 #   ./generate-changelog.sh [OPTIONS]
@@ -16,6 +17,7 @@
 # Options:
 #   --target BRANCH    Target branch (prompts if not specified)
 #   --rename           Rename pending changelog with current HEAD hash
+#   --generate-only    Generate changelog without merge workflow
 #   --yes, -y          Skip all confirmation prompts
 #   --help             Show this help message
 #
@@ -25,6 +27,9 @@
 #
 #   # Specify target branch
 #   ./generate-changelog.sh --target dev
+#
+#   # Full automated merge (no prompts)
+#   ./generate-changelog.sh --target dev --yes
 #
 #   # Rename after merge
 #   ./generate-changelog.sh --rename
@@ -43,6 +48,7 @@ fi
 TARGET_BRANCH=""
 RENAME_MODE=false
 SKIP_CONFIRM=false
+GENERATE_ONLY=false
 ARCHIVE_DIR="${PROJECT_ROOT}/changelog_archive"
 
 # Colors
@@ -82,6 +88,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--rename)
 		RENAME_MODE=true
+		shift
+		;;
+	--generate-only)
+		GENERATE_ONLY=true
 		shift
 		;;
 	--yes | -y)
@@ -252,9 +262,94 @@ $(git diff --stat "$TARGET_BRANCH...HEAD" 2>/dev/null | head -100)
 \`\`\`
 EOF
 
-log_info "Generated: $CHANGELOG"
+log_info "Generated: $(basename "$CHANGELOG")"
+
+# Generate-only mode: print manual steps and exit
+if [[ "$GENERATE_ONLY" == "true" ]]; then
+	echo ""
+	echo "Next steps:"
+	echo "  1. Review the changelog: cat $CHANGELOG"
+	echo "  2. Commit before merge: git add $CHANGELOG $ARCHIVE_DIR/"
+	echo "  3. After merge, rename: $0 --rename"
+	exit 0
+fi
+
+# --- Interactive merge workflow ---
+
 echo ""
-echo "Next steps:"
-echo "  1. Review the changelog: cat $CHANGELOG"
-echo "  2. Commit before merge: git add $CHANGELOG $ARCHIVE_DIR/"
-echo "  3. After merge, rename: $0 --rename"
+head -30 "$CHANGELOG"
+echo "  ..."
+echo ""
+
+confirm() {
+	if [[ "$SKIP_CONFIRM" == "true" ]]; then
+		return 0
+	fi
+	log_prompt "$1 [y/N] "
+	read -n 1 -r
+	echo ""
+	[[ $REPLY =~ ^[Yy]$ ]]
+}
+
+# Step 1: Commit changelog on feature branch
+if ! confirm "Commit changelog and merge ${CURRENT_BRANCH} → ${TARGET_BRANCH}?"; then
+	echo ""
+	echo "Changelog saved. Manual steps:"
+	echo "  1. git add $CHANGELOG $ARCHIVE_DIR/"
+	echo "  2. git commit -m \"docs(changelog): add changelog for ${CURRENT_BRANCH} merge\""
+	echo "  3. git checkout $TARGET_BRANCH && git merge $CURRENT_BRANCH"
+	echo "  4. $0 --rename"
+	exit 0
+fi
+
+git add "$CHANGELOG" "$ARCHIVE_DIR/" 2>/dev/null || true
+git commit -m "docs(changelog): add changelog for ${CURRENT_BRANCH} merge"
+log_info "Committed changelog on ${CURRENT_BRANCH}"
+
+# Step 2: Push feature branch
+if confirm "Push ${CURRENT_BRANCH} to origin before merge?"; then
+	git push origin "$CURRENT_BRANCH"
+	log_info "Pushed ${CURRENT_BRANCH}"
+fi
+
+# Step 3: Switch to target branch and pull
+log_info "Switching to ${TARGET_BRANCH}..."
+git checkout "$TARGET_BRANCH"
+git pull origin "$TARGET_BRANCH" 2>/dev/null || true
+
+# Step 4: Merge
+log_info "Merging ${CURRENT_BRANCH} into ${TARGET_BRANCH}..."
+if ! git merge --no-ff "$CURRENT_BRANCH" -m "Merge branch '${CURRENT_BRANCH}' into ${TARGET_BRANCH}"; then
+	log_error "Merge conflicts detected"
+	echo ""
+	echo "Resolve conflicts, then:"
+	echo "  1. git add <resolved-files>"
+	echo "  2. git commit"
+	echo "  3. $0 --rename"
+	exit 1
+fi
+log_info "Merged ${CURRENT_BRANCH} into ${TARGET_BRANCH}"
+
+# Step 5: Rename changelog with merge commit hash
+MERGE_HASH=$(git rev-parse --short HEAD)
+FINAL_CHANGELOG="${PROJECT_ROOT}/CHANGELOG-${MERGE_HASH}.md"
+mv "$CHANGELOG" "$FINAL_CHANGELOG"
+log_info "Renamed: CHANGELOG-pending.md → CHANGELOG-${MERGE_HASH}.md"
+
+# Step 6: Amend merge commit to include rename
+cd "$PROJECT_ROOT"
+git add "CHANGELOG-${MERGE_HASH}.md" "CHANGELOG-pending.md" "changelog_archive/" 2>/dev/null || true
+git commit --amend --no-edit
+log_info "Amended merge commit with final changelog"
+
+# Step 7: Push target branch
+if confirm "Push ${TARGET_BRANCH} to origin?"; then
+	git push origin "$TARGET_BRANCH"
+	log_info "Pushed ${TARGET_BRANCH}"
+fi
+
+echo ""
+log_info "Complete: ${CURRENT_BRANCH} → ${TARGET_BRANCH} (${MERGE_HASH})"
+echo ""
+echo "  Changelog: CHANGELOG-${MERGE_HASH}.md"
+echo "  Commit:    ${MERGE_HASH}"
