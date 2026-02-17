@@ -78,7 +78,7 @@ prompt_input() {
 	local result
 
 	log_prompt "$prompt"
-	[[ -n "$default" ]] && printf "[$default] "
+	[[ -n "$default" ]] && printf "[%s] " "$default"
 	read -r result
 
 	echo "${result:-$default}"
@@ -86,60 +86,36 @@ prompt_input() {
 
 # Git helpers
 get_current_branch() {
-	git branch --show-current 2> /dev/null || echo "detached"
-}
-
-get_project_root() {
-	local script_dir
-	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-	if [[ "$(basename "$script_dir")" == "src" ]]; then
-		dirname "$script_dir"
-	else
-		git rev-parse --show-toplevel 2> /dev/null || echo "."
-	fi
+	git branch --show-current 2>/dev/null || echo "detached"
 }
 
 get_common_branches() {
-	git branch -r 2> /dev/null | grep -E 'origin/(main|master|dev|develop|staging)' | sed 's/.*origin\///' | sort -u
+	git branch -r 2>/dev/null | grep -E 'origin/(main|master|dev|develop|staging)' | sed 's/.*origin\///' | sort -u
 }
 
 get_remote_url() {
-	git remote get-url origin 2> /dev/null | sed 's/\.git$//' | sed 's/git@github\.com:/https:\/\/github.com\//' || true
+	git remote get-url origin 2>/dev/null | sed 's/\.git$//' | sed 's/git@github\.com:/https:\/\/github.com\//' || true
 }
 
 get_conflicted_files() {
-	{
-		git diff --name-only --diff-filter=U 2> /dev/null || true
-		git ls-files -u 2> /dev/null \
-			| awk '{ for(i=4;i<=NF;i++) printf "%s"(i<NF?" ":""), $i; print "" }' \
-			|| true
-	} | sort -u
+	# ls-files -u lists all unmerged entries (covers renames, deletes, both-modified)
+	git ls-files -u 2>/dev/null |
+		awk '{$1=$2=$3=""; gsub(/^[[:space:]]+/,""); print}' |
+		sort -u |
+		grep -v '^$' || true
 }
 
 ensure_gitignored() {
 	local pattern="$1"
 	local gitignore="${PROJECT_ROOT:-.}/.gitignore"
 	if [[ -f "$gitignore" ]]; then
-		if ! grep -q "^${pattern}$" "$gitignore" 2> /dev/null; then
-			echo "$pattern" >> "$gitignore"
+		if ! grep -q "^${pattern}$" "$gitignore" 2>/dev/null; then
+			echo "$pattern" >>"$gitignore"
 			log_info "Added $pattern to .gitignore"
 		fi
 	else
-		echo "$pattern" > "$gitignore"
+		echo "$pattern" >"$gitignore"
 		log_info "Created .gitignore with $pattern"
-	fi
-}
-
-# Utility functions
-show_version() {
-	echo "dev-conventions v${VERSION:-0.1.0}"
-}
-
-show_help() {
-	if [[ -f "${BASH_SOURCE[0]}" ]]; then
-		sed -n '/^# Purpose:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# //'
-	else
-		echo "No help available"
 	fi
 }
 
@@ -153,5 +129,42 @@ normalize_github_url() {
 
 # Check if command exists
 command_exists() {
-	command -v "$1" &> /dev/null
+	command -v "$1" &>/dev/null
+}
+
+# Interactive choice menu using gum if available, otherwise basic prompt
+# Usage: choose "option1    Description" "option2    Description"
+# Returns: selected option (first word before whitespace)
+choose() {
+	local options=("$@")
+	local selected
+
+	if command_exists gum; then
+		selected=$(gum choose "${options[@]}" --header="Select an option")
+		# Extract just the option key (first word before whitespace)
+		echo "$selected" | awk '{print $1}'
+	else
+		# Fallback: display numbered menu
+		echo ""
+		for i in "${!options[@]}"; do
+			local num=$((i + 1))
+			local opt="${options[$i]}"
+			# Split on first whitespace to get key and description
+			local key="${opt%%[[:space:]]*}"
+			local desc="${opt#*[[:space:]]}"
+			[[ "$key" == "$desc" ]] && desc=""
+			printf "  %s) %s\n" "$num" "${desc:-$key}"
+		done
+		echo ""
+		log_prompt "Select option [1-${#options[@]}]: "
+		read -n 1 -r
+		echo ""
+		if [[ "$REPLY" =~ ^[0-9]+$ ]] && [[ "$REPLY" -ge 1 ]] && [[ "$REPLY" -le ${#options[@]} ]]; then
+			local idx=$((REPLY - 1))
+			local opt="${options[$idx]}"
+			echo "${opt%%[[:space:]]*}"
+		else
+			return 1
+		fi
+	fi
 }
