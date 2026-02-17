@@ -1,20 +1,33 @@
 # Apollo nix flake
+
 Nix flake for https://github.com/ClassicOldSong/Apollo.
+
+> **Note:** This project contains LLM-generated contributions. Use with caution and review changes before deploying.
 
 ## Disclaimer
 This is the first flake I'm building. It might not be complete. Following the Usage section you should be able to get Apollo up and running.
 
 ## Usage
-To include the flake, follow the instructions [Using nix flakes with NixOS](https://nixos.wiki/wiki/flakes#Using_nix_flakes_with_NixOS). After including the flake I added this to my modules in flake.nix:
+To include the flake, follow the instructions [Using nix flakes with NixOS](https://nixos.wiki/wiki/flakes#Using_nix_flakes_with_NixOS). After including the flake, add the module to your NixOS configuration:
+
 ```nix
-    modules = [
-      # configuration.nix
-      # Apollo
-      (inputs.apollo-flake.nixosModules.${linuxPkgsUnstable.system}.default)
-      ({pkgs, ...}: {
-        services.apollo.package = apollo-flake.packages.${pkgs.system}.default;
-      })
-    ];
+{
+  inputs.apollo-flake.url = "github:popcat19/apollo-flake";
+
+  outputs = { self, nixpkgs, apollo-flake, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        apollo-flake.nixosModules.default
+        {
+          services.apollo.enable = true;
+          # package is auto-set from the flake, but can be overridden:
+          # services.apollo.package = apollo-flake.packages.x86_64-linux.default;
+        }
+      ];
+    };
+  };
+}
 ```
 
 And in my `configuration.nix`:
@@ -49,4 +62,8 @@ And in my `configuration.nix`:
 After `nixos-rebuild` the service should be started. Verify with `systemctl --user status apollo` or start it with `systemctl --user start apollo.service`
 
 ## Credits
-I made some small modifications to the Sunshine package from nixpkgs (https://github.com/NixOS/nixpkgs/blob/nixos-25.05/pkgs/by-name/su/sunshine/package.nix). The people maintaining that package put in the hard work to make the package work for Sunshine.
+
+- Original project: [ClassicOldSong/Apollo](https://github.com/ClassicOldSong/Apollo)
+- Forked from: [nil-andreas/apollo-flake](https://github.com/nil-andreas/apollo-flake)
+- Sunshine package: Modified from [nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-25.05/pkgs/by-name/su/sunshine/package.nix) — thanks to the Sunshine package maintainers for their work
+- Refactoring: LLM-assisted with human review
