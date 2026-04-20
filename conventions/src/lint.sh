@@ -39,7 +39,7 @@ run_shfmt() {
 		args+=(-w)
 	fi
 
-	# Use shfmt defaults (tab indent, 80 width is common but we use default)
+	# Use shfmt defaults (tab indent, 80 width is common but default is used)
 	local failed=0
 	for file in "${files[@]}"; do
 		if [[ "$mode" == "check" ]]; then
@@ -139,9 +139,9 @@ remove_pre_push_hook() {
 		return 0
 	fi
 
-	# Check if it's our hook
+	# Check if it's the dev-conventions hook
 	if grep -q "dev-conventions lint" "$hook_file" 2>/dev/null; then
-		# Remove our section
+		# Remove the dev-conventions section
 		local temp_file
 		temp_file=$(mktemp)
 		sed '/# dev-conventions pre-push check/,/^fi$/d' "$hook_file" >"$temp_file"
@@ -166,6 +166,9 @@ cmd_lint() {
 	local files=()
 	local install_hook=false
 	local remove_hook=false
+	local check_context=false
+	local install_context_hook=false
+	local remove_context_hook=false
 
 	# Parse arguments
 	while [[ $# -gt 0 ]]; do
@@ -194,6 +197,18 @@ cmd_lint() {
 			remove_hook=true
 			shift
 			;;
+		--context)
+			check_context=true
+			shift
+			;;
+		--install-context-hook)
+			install_context_hook=true
+			shift
+			;;
+		--remove-context-hook)
+			remove_context_hook=true
+			shift
+			;;
 		--yes | -y)
 			# shellcheck disable=SC2034
 			SKIP_CONFIRM=true
@@ -206,6 +221,12 @@ cmd_lint() {
 		esac
 	done
 
+	# Source check-context.sh from the same directory as this module (src/ or scripts/)
+	_LINT_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	if [[ -f "${_LINT_SH_DIR}/check-context.sh" ]]; then
+		source "${_LINT_SH_DIR}/check-context.sh"
+	fi
+
 	# Handle hook operations
 	if [[ "$install_hook" == "true" ]]; then
 		install_pre_push_hook
@@ -215,6 +236,29 @@ cmd_lint() {
 	if [[ "$remove_hook" == "true" ]]; then
 		remove_pre_push_hook
 		return $?
+	fi
+
+	if [[ "$install_context_hook" == "true" ]]; then
+		install_context_hook
+		return $?
+	fi
+
+	if [[ "$remove_context_hook" == "true" ]]; then
+		remove_context_hook
+		return $?
+	fi
+
+	# Handle context.md check
+	if [[ "$check_context" == "true" ]]; then
+		if declare -f check_context_drift &>/dev/null; then
+			log_info "Checking context.md files..."
+			echo ""
+			check_context_drift "$PROJECT_ROOT"
+			return $?
+		else
+			log_error "check-context.sh not found"
+			return 1
+		fi
 	fi
 
 	# Find shell scripts if not specified

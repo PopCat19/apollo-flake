@@ -2,7 +2,7 @@
 
 **Purpose:** An opinionated agent development rules and conventions.
 
-**Principles:** KISS (Keep It Simple, Stupid), DRY (Don't Repeat Yourself), lazy maintenance, self-documenting code.
+**Principles:** KISS (Keep It Simple, Stupid), DRY (Don't Repeat Yourself), SoC (Separation of Concerns), SRP (Single Responsibility Principle), CoC (Convention over Configuration), lazy maintenance, self-documenting code.
 
 **Reading Guide:** This document is comprehensive (1.5~3k lines) covering multiple languages and use cases. Use the table of contents to navigate to relevant sections. Each rule is independently simple; apparent complexity comes from breadth of coverage. Rule 17 (Example Patterns) is optional reference material.
 
@@ -25,14 +25,14 @@
 15. [Principles](#15-principles)
 16. [Tone and Formatting](#16-tone-and-formatting)
 17. [Example Patterns](#17-example-patterns)
-18. [New Rule Files](#18-new-rule-files)
-19. [Changelog Policy](#19-changelog-policy)
+18. [Agent Interaction](#18-agent-interaction)
+19. [New Rule Files](#19-new-rule-files)
+20. [Changelog Policy](#20-changelog-policy)
+21. [Vocabulary](#21-vocabulary)
 
 ## 1. File Headers
 
 **Rationale:** Headers provide quick context without opening files. Minimal format avoids maintenance overhead from tracking dependencies and relationships that change frequently.
-
-**Policy:** Optional unless project specifies. When used:
 
 ```
 # <File Name>
@@ -789,7 +789,14 @@ nix-shell -p pandoc --run "pandoc input.md -o output.pdf"
   - Easy to examine individual components
   - Conflict tracing shows which module changed
   - Enables selective imports/overrides
-- **Tree should be intuitive:** Newcomers should understand structure from directory names alone
+- **SoC in practice:** Each module directory maps to one concern
+  (`system/`, `home/`, `secrets/`). Avoid catch-all directories
+  (`misc/`, `stuff/`, `helpers/`) — if a name doesn't declare a concern,
+  the structure is wrong
+- **SRP in practice:** If a file changes for two unrelated reasons across
+  separate commits, it should have been two files
+- **Tree should be intuitive:** Newcomers should understand structure from
+  directory names alone
 
 **Repository organization:**
 - **Monorepo:** Each app/package maintains its own 6-level budget
@@ -833,6 +840,102 @@ configuration/
 - Common configs should be easy to reach and remember
 - Tree structure should encourage exploration
 - Optimize for newcomer comprehension
+
+### Stratified Module Hierarchy
+
+**Rationale:** Large monolithic files obscure boundaries between concerns. Splitting by role makes changes traceable, reviews focused, and imports selective. A soft threshold prevents premature fragmentation while nudging toward healthier structure.
+
+**When to stratify:** Consider splitting files approaching **800–1000 lines** (soft guideline). Context matters — some files are naturally long (e.g., single-file deployments, portable scripts). Don't split for the sake of splitting.
+
+**Two valid patterns:**
+
+**Domain subdirs** — group files by independent feature or concern:
+```
+# Before: single 1200-line auth.nix
+config/
+  auth.nix
+
+# After: split by domain concern
+config/
+  auth/
+    login.nix
+    tokens.nix
+    sessions.nix
+    context.md
+```
+
+**Layer subdirs** — group files by architectural layer:
+```
+# Before: single 1100-line api-client.ts
+src/
+  api-client.ts
+
+# After: split by layer
+src/
+  api-client/
+    types.ts
+    handlers.ts
+    middleware.ts
+    utils.ts
+    context.md
+```
+
+**Choosing a pattern:**
+- **Domain:** Use when concerns are independent features (login vs tokens vs sessions — each is a distinct capability)
+- **Layer:** Use when files share concerns across architectural boundaries (types, handlers, middleware — each operates on the same domain)
+- **When in doubt:** Prefer domain — it maps closer to how humans think about modules
+
+**Rules that still apply:**
+- **Depth:** New subdirs count toward the 6-level budget
+- **Wiring:** Every stratified file must be imported somewhere (wire in on create)
+- **context.md:** Required if 5+ non-obvious files in the new subdir
+- **Headers:** Every stratified file requires a file header with `Purpose:` line
+- **Naming:** Dirs are `snake_case`, files are `kebab-case`
+
+**Scope:** Applies to project source code. Convention/reference docs (like this file) use table-of-contents navigation instead.
+
+### Directory Index Files (`context.md`)
+
+Add a `context.md` to any folder where filenames alone don't convey the full picture — typically 5+ files forming a non-obvious module grouping.
+
+**When to create:**
+- Folder has multiple files whose purpose isn't evident from names alone
+- Folder is a module group, not a flat self-documenting config dir or single-purpose leaf
+
+**When to skip:**
+- Filenames are self-documenting (`audio.nix`, `networking.nix`)
+- Fewer than ~5 files with obvious names
+- Single-purpose leaf folders (`shaders/`, `wallpaper/`)
+
+**Format:**
+```markdown
+# Context
+
+- `filename.ext` — One-line present-tense purpose
+- `other-file.ext` — One-line present-tense purpose
+```
+
+**Single source of truth:**
+- **Derive from file headers:** Each entry must match the file's header `Purpose:` line verbatim (or near-verbatim if truncated for length)
+- The file header is the authoritative source; `context.md` is a derived surface
+- This enables automated drift detection — updating a header without updating `context.md` triggers the hook
+
+**Files in context.md require headers:**
+- Any file listed in `context.md` **must** have a file header with a `Purpose:` line
+- This is required for the drift check to validate content, not just structure
+- Files without headers (shell scripts, configs, non-module files) cannot be listed in `context.md`
+
+**Rules:**
+- One line per file, present-tense verb phrase (from header `Purpose:`)
+- Directories are excluded — they own their own `context.md`
+- Always tracked in git; never gitignored
+- **Must be updated atomically with file additions, removals, and renames** — same commit, no exceptions
+- Treat an outdated `context.md` as broken as a missing import
+
+**Drift detection:**
+- See `src/check-context.sh` for automated verification
+- Validates both structure (listed files exist) and content (entry matches header `Purpose:`)
+- Can be installed as pre-commit hook: `dev-conventions.sh lint --install-context-hook`
 
 ## 5. Comments
 
@@ -1650,6 +1753,23 @@ permissions:
 - Single source of truth
 - Changes propagate automatically
 
+**SoC:** Separation of Concerns
+- Each file, module, or service owns exactly one concern
+- Mixing concerns (e.g., boot config and user config in one file) obscures
+  intent and hardens refactoring
+- Applied structurally: directories group by concern, not by file type
+
+**SRP:** Single Responsibility Principle
+- Each module has one reason to change
+- Applied at every level: file, directory, flake module, profile
+- If two unrelated things would cause a file to change, split it
+
+**CoC:** Convention over Configuration
+- Predictable structure reduces decision fatigue
+- Consistent naming, depth limits, and `context.md` placement are
+  load-bearing conventions, not style preferences
+- Deviation requires justification; conformance requires none
+
 **Maintainable over clever:**
 - Code is read 10x more than written
 - Optimize for the next person (often you)
@@ -1690,7 +1810,72 @@ const reverseString = (str) => {
 
 See [DEV-EXAMPLES.md](./DEV-EXAMPLES.md) for concrete reference examples from real projects (NixOS/Home Manager/Hyprland/Fish context). Optional reading.
 
-## 18. New Rule Files
+## 18. Agent Interaction
+
+**Rationale:** When requesting shell output for review, commands should be structured so the response can be sent back in one shot via `wl-copy` (Wayland clipboard). This avoids back-and-forth for file contents, status checks, or diagnostic output.
+
+### Format
+
+**One-shot convention:** When user says "oneliner" or "oneshot", wrap commands so all output concatenates into a single clipboard payload.
+
+- **Fish:** `begin; <commands>; end | wl-copy`
+- **Bash:** `{ <commands>; } | wl-copy`
+- **Separators:** Use `echo ===` or `===` between logical groups
+
+### Rules
+
+- Fish shell: use `begin; end` blocks, not `{ }` (fish braces don't work like bash)
+- Fish shell: use `$status` not `$?` (fish uses `$status` for exit codes)
+- Always append `--no-pager` to `systemctl`, `journalctl`, and similar commands
+- Append `-l` (long output) to `systemctl status` for full error lines
+- Prefix with `timeout N` for commands that may block (e.g., `wl-paste --watch`)
+- Kill piped output that may hang: `timeout 2 wl-paste --watch echo`
+- Non-tty prompts degrade to default (add `--yes`/`-y` flags where available)
+
+### Systemd
+
+- Not every host runs systemd — could be non-systemd Linux, BSD, macOS, WSL, etc.
+- Do not assume `systemctl` exists; if the command fails or doesn't exist, skip it
+- Do not wrap systemd-dependent commands in error traps that abort the whole one-shot
+- Prefer checking availability first: `command -v systemctl &>/dev/null && systemctl ...`
+- On non-systemd hosts, fall back to direct inspection where possible (checking PID files, process lists, etc.)
+
+### Search tools
+
+- **Prefer ripgrep (`rg`)** when available — faster, respects `.gitignore` automatically
+- **Fallback:** `grep -r` with shell globs, `awk`, `sed`, or any available tools as appropriate
+- Do not assume `rg` exists; check with `command -v rg &>/dev/null` or just use `grep -r` if uncertain
+
+### Examples
+
+```fish
+# System diagnostics
+begin; systemctl --user status cliphist.service --no-pager -l; echo ===; cliphist list | head -10; end | wl-copy
+
+# File contents with separator
+begin; cat ~/config/services.nix; echo ===; cat ~/config/portals.nix; end | wl-copy
+
+# Diagnostics with timeout for blocking commands
+begin; systemctl --user status service --no-pager -l; echo ===; timeout 2 wl-paste --watch echo 2>&1; echo "exit: $status"; end | wl-copy
+
+# Search with fallback
+begin; command -v rg &>/dev/null && rg "pattern" ~/config --nix || grep -r "pattern" ~/config --include="*.nix"; end | wl-copy
+```
+
+### When to use
+
+- Agent requesting config files for review
+- Diagnosing service failures
+- Comparing generated unit files vs source
+- Any situation where agent needs to see terminal output
+
+### When not to use
+
+- User is editing files interactively
+- Commands produce large output (>500 lines, use file instead)
+- Commands require interactive input
+
+## 19. New Rule Files
 
 **Rationale:** Rule proliferation creates cognitive burden. New files must earn their existence.
 
@@ -1714,7 +1899,7 @@ See [DEV-EXAMPLES.md](./DEV-EXAMPLES.md) for concrete reference examples from re
 
 **Example:** Don't create `variable-naming-rules.md` when it fits in existing `code-style.md`.
 
-## 19. Changelog Policy
+## 20. Changelog Policy
 
 **Rationale:** Changelogs provide human-readable summaries of what changed per merge. Generating them from git history before merging ensures accuracy and creates an audit trail. Archiving keeps the root clean.
 
@@ -1879,6 +2064,85 @@ Do **not** gitignore changelogs. They are project history.
 # CHANGELOG-*.md
 # changelog_archive/
 ```
+
+---
+
+[↑ Back to Top](#development) | [Table of Contents](#table-of-contents)
+
+## 21. Vocabulary
+
+**Rationale:** Shared vocabulary reduces ambiguity in agent instructions,
+code review, and documentation. When referring to parts of a repo, prefer
+these terms over informal equivalents.
+
+**Primary reference:** DDD (Domain-Driven Design). Secondary bridge:
+Figma design system vocabulary, for contributors with a design background.
+
+**Repo-specific mapping:** Do not embed project paths in this file. Map
+terms to your repo's actual structure in your root `context.md` under a
+`## Vocabulary` section.
+
+### Structure terms
+
+| Term | Definition |
+|------|------------|
+| **Domain** | Bounded area of concern |
+| **Subdomain** | Narrower concern within a domain |
+| **Bounded Context** | Everything scoped to one deployable unit — its own rules and overrides |
+| **Context Boundary** | The seam where unit-specific config meets shared config |
+| **Shared Kernel** | Code multiple domains depend on without any single domain owning |
+| **Anti-Corruption Layer** | Translates raw inputs into a normalized shape before the rest of the system sees them |
+| **Infrastructure** | Plumbing that supports domains without belonging to any |
+| **Supporting Domain** | Exists to serve the core domain, not be it |
+| **Generic Subdomain** | Solved problem, not unique to this domain — patch upstream, move on |
+
+### Building block terms
+
+| Term | Definition |
+|------|------------|
+| **Entity** | A thing with identity, distinguished from others of its kind |
+| **Value Object** | No identity of its own — a pure value, swappable and reusable |
+| **Aggregate** | The root that pulls all parts of one entity into a coherent whole |
+| **Aggregate Root** | The single entry point everything resolves through |
+| **Repository** | Knows how to find and assemble all entities of a type |
+| **Factory** | Constructs a valid, complete object from inputs |
+| **Module** | Pluggable unit of behavior within a domain |
+
+### Variation terms
+
+| Term | Definition |
+|------|------------|
+| **Policy** | A named rule set applied to entities |
+| **Specification** | Defines what it means to satisfy a named policy — inclusion criteria |
+| **Strategy** | Per-entity behavioral override — same interface, different implementation |
+| **Base Domain** | Core shared reality every entity inherits |
+| **Detached Instance** | An entity that opted out of shared behavior and owns its own implementation |
+| **Ubiquitous Language** | The shared vocabulary all contributors and agents use to describe a repo |
+
+### Figma bridge
+
+For contributors coming from a design background:
+
+| Figma | DDD |
+|-------|-----|
+| Page | Domain |
+| Section | Subdomain |
+| Master component | Factory / Anti-Corruption Layer |
+| Component | Module |
+| Instance | Bounded Context |
+| Variant | Policy |
+| Local override / Detach instance | Strategy |
+| Library | Shared Kernel |
+| Design token | Value Object |
+| Component props | Context Boundary |
+
+### Key insight
+
+When a unit-level override exists for a concern, that unit has **detached
+from the shared model** for that concern. In Figma terms: detached
+instance. In DDD terms: bounded context with a broken conformist
+relationship. Both mean the same thing — it opted out, it owns the copy,
+changes to base will not propagate to it automatically.
 
 ---
 
