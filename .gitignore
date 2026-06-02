@@ -1,1 +1,5 @@
 /result
+
+# Command Code agent local data (taste, session logs)
+.commandcode/
+/pi-session-*.html
